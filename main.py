@@ -147,7 +147,8 @@ class MatrixChainMultiplicationApp:
         The problem is not to perform the multiplications, but to decide the sequence of multiplications.
 
         Dynamic Programming Solution:
-        1. Define the subproblem: m[i,j] = minimum number of scalar multiplications needed to compute the product of matrices A_i to A_j.
+        1. Define the subproblem: m[i,j] = minimum number of scalar multiplications needed to compute the product of 
+           matrices A_i to A_j.
         2. Recursive relation:
            m[i,j] = min_{i≤k<j} {m[i,k] + m[k+1,j] + p_{i-1} × p_k × p_j}
            where p_i is the dimension of matrix A_i (p_{i-1} rows × p_i columns)
