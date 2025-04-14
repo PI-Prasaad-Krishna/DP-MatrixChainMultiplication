@@ -2,12 +2,12 @@
 
 This project visualizes the classic Matrix Chain Multiplication problem using a dynamic programming approach. It provides an interactive GUI built with Tkinter and Matplotlib, allowing users to:
 
-Input custom matrix dimensions
+1. Input custom matrix dimensions
 
-View the DP cost table
+2. View the DP cost table
 
-Understand the optimal multiplication order
+3. Understand the optimal multiplication order
 
-Compare with naive multiplication strategies
+4. Compare with naive multiplication strategies
 
 🎯 Goal: Minimize the number of scalar multiplications required when multiplying a sequence of matrices.
