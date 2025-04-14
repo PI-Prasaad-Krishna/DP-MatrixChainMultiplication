@@ -17,6 +17,8 @@ class MatrixChainMultiplicationApp:
         self.matrices = []
         self.dp_table = None
         self.parenthesization = None
+        self.fig_dp = None
+        self.fig_comparison = None
         
         # Set up the UI components
         self.setup_ui()
@@ -172,6 +174,21 @@ class MatrixChainMultiplicationApp:
         scrolled_text.config(state=tk.DISABLED)
     
     def clear_results(self):
+        # Clean up matplotlib figures to avoid memory leaks
+        if self.fig_dp is not None:
+            plt.close(self.fig_dp)
+            self.fig_dp = None
+        
+        if self.fig_comparison is not None:
+            plt.close(self.fig_comparison)
+            self.fig_comparison = None
+            
+        # Reset application state
+        self.matrices = []
+        self.dp_table = None
+        self.parenthesization = None
+        
+        # Reset input fields
         self.dimensions_entry.delete(0, tk.END)
         self.dimensions_entry.insert(0, "30,35,15,5,10,20,25")  # Default example
         
@@ -187,6 +204,15 @@ class MatrixChainMultiplicationApp:
     
     def calculate_matrix_chain(self):
         try:
+            # Clean up previous matplotlib figures to avoid memory leaks
+            if self.fig_dp is not None:
+                plt.close(self.fig_dp)
+                self.fig_dp = None
+            
+            if self.fig_comparison is not None:
+                plt.close(self.fig_comparison)
+                self.fig_comparison = None
+            
             # Get dimensions from input
             dimensions_input = self.dimensions_entry.get().strip()
             dimensions = [int(d.strip()) for d in dimensions_input.split(',')]
@@ -255,8 +281,8 @@ class MatrixChainMultiplicationApp:
             widget.destroy()
         
         # Create a Figure and Axes for the visualization
-        fig, ax = plt.subplots(figsize=(8, 6))
-        fig.patch.set_facecolor('#f0f0f5')
+        self.fig_dp, ax = plt.subplots(figsize=(8, 6))
+        self.fig_dp.patch.set_facecolor('#f0f0f5')
         
         # Create a normalized colormap for the DP table values
         if self.dp_table.max() > 0:
@@ -275,7 +301,7 @@ class MatrixChainMultiplicationApp:
         
         # Add labels and colorbar
         ax.set_title('Dynamic Programming Table (Cost)', fontsize=14)
-        fig.colorbar(im, ax=ax, label='Number of scalar multiplications')
+        self.fig_dp.colorbar(im, ax=ax, label='Number of scalar multiplications')
         
         # Add row and column labels
         ax.set_xticks(np.arange(n))
@@ -298,7 +324,7 @@ class MatrixChainMultiplicationApp:
         plt.tight_layout()
         
         # Embed the plot in the tkinter frame
-        canvas = FigureCanvasTkAgg(fig, master=self.dp_tab)
+        canvas = FigureCanvasTkAgg(self.fig_dp, master=self.dp_tab)
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True)
         canvas.draw()
@@ -407,12 +433,16 @@ class MatrixChainMultiplicationApp:
         
         # Left-to-right multiplication
         if n > 1:  # Only calculate if we have at least 2 matrices
-            left_to_right_cost = self.calculate_cost_for_order(list(range(n-1)))
-            comparison_data.append(("Left-to-right", left_to_right_cost))
-            
-            # Right-to-left multiplication
-            right_to_left_cost = self.calculate_cost_for_order_reversed([i for i in range(n-1, -1, -1) if i < n])
-            comparison_data.append(("Right-to-left", right_to_left_cost))
+            try:
+                left_to_right_cost = self.calculate_left_to_right_cost()
+                comparison_data.append(("Left-to-right", left_to_right_cost))
+                
+                # Right-to-left multiplication
+                right_to_left_cost = self.calculate_right_to_left_cost()
+                comparison_data.append(("Right-to-left", right_to_left_cost))
+            except Exception as e:
+                # If there's an error in calculation, just skip these entries
+                pass
         
         # Only add random orders if we have more than 2 matrices
         if n > 2:
@@ -429,8 +459,8 @@ class MatrixChainMultiplicationApp:
                     pass
         
         # Create a Figure and Axes for the bar chart
-        fig, ax = plt.subplots(figsize=(8, 5))
-        fig.patch.set_facecolor('#f0f0f5')
+        self.fig_comparison, ax = plt.subplots(figsize=(8, 5))
+        self.fig_comparison.patch.set_facecolor('#f0f0f5')
         
         # Extract data for plotting
         labels = [data[0] for data in comparison_data]
@@ -454,7 +484,7 @@ class MatrixChainMultiplicationApp:
         plt.tight_layout()
         
         # Embed the plot in the tkinter frame
-        canvas = FigureCanvasTkAgg(fig, master=comparison_frame)
+        canvas = FigureCanvasTkAgg(self.fig_comparison, master=comparison_frame)
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.pack(fill=tk.BOTH, expand=True)
         canvas.draw()
@@ -479,9 +509,13 @@ class MatrixChainMultiplicationApp:
                 Comparison shows different multiplication orders and their computational costs.
                 The optimal solution found by dynamic programming requires {optimal_cost:,} operations.
                 """
-                if left_to_right_cost > optimal_cost:
-                    percent_diff = round((left_to_right_cost/optimal_cost - 1) * 100, 1)
-                    explanation_text += f"\nThis is {percent_diff}% more efficient than naive left-to-right multiplication."
+                
+                # Only add this if we have the left-to-right cost available
+                if len(comparison_data) > 1 and comparison_data[1][0] == "Left-to-right":
+                    left_to_right_cost = comparison_data[1][1]
+                    if left_to_right_cost > optimal_cost:
+                        percent_diff = round((left_to_right_cost/optimal_cost - 1) * 100, 1)
+                        explanation_text += f"\nThis is {percent_diff}% more efficient than naive left-to-right multiplication."
         else:
             explanation_text = "With only one matrix, no multiplication is needed."
         
@@ -491,53 +525,76 @@ class MatrixChainMultiplicationApp:
             wraplength=700
         ).pack(anchor=tk.W, pady=10)
     
-    def calculate_cost_for_order(self, order):
-        # Calculate cost for a specific multiplication order (left to right)
-        if not order:  # Handle empty order
+    def calculate_left_to_right_cost(self):
+        # Calculate cost for left-to-right multiplication order
+        if len(self.matrices) <= 1:
             return 0
             
         total_cost = 0
-        temp_matrices = self.matrices.copy()
+        result_rows = self.matrices[0][0]
         
-        for i in range(len(order)):
-            if i >= len(order) - 1:
-                break
-                
-            idx1, idx2 = i, i+1
-                
-            # Cost of multiplying matrices at idx1 and idx2
-            cost = temp_matrices[idx1][0] * temp_matrices[idx1][1] * temp_matrices[idx2][1]
+        for i in range(len(self.matrices) - 1):
+            # Current matrix dimensions
+            rows = result_rows
+            cols = self.matrices[i][1]
+            
+            # Next matrix dimensions
+            next_cols = self.matrices[i+1][1]
+            
+            # Cost = rows × cols × next_cols
+            cost = rows * cols * next_cols
             total_cost += cost
             
-            # Update the result matrix dimensions
-            new_matrix = (temp_matrices[idx1][0], temp_matrices[idx2][1])
-            # In a real implementation, we would remove both matrices and insert the result
-            # Here we just update the first one for simplicity
-            temp_matrices[idx1] = new_matrix
+            # Update result dimensions for next iteration
+            result_rows = rows
         
         return total_cost
     
-    def calculate_cost_for_order_reversed(self, order):
-        # Calculate cost for right-to-left multiplication
-        if len(order) <= 1:  # Handle empty or single-element order
+    def calculate_right_to_left_cost(self):
+        # Calculate cost for right-to-left multiplication order
+        if len(self.matrices) <= 1:
             return 0
             
         total_cost = 0
-        temp_matrices = self.matrices.copy()
+        result_cols = self.matrices[-1][1]
         
-        # For right-to-left, we start from the end
-        for i in range(len(temp_matrices) - 1, 0, -1):
-            # Cost of multiplying matrices at i-1 and i
-            cost = temp_matrices[i-1][0] * temp_matrices[i-1][1] * temp_matrices[i][1]
+        for i in range(len(self.matrices) - 1, 0, -1):
+            # Current matrix dimensions
+            rows = self.matrices[i][0]
+            cols = result_cols
+            
+            # Previous matrix dimensions
+            prev_rows = self.matrices[i-1][0]
+            
+            # Cost = prev_rows × rows × cols
+            cost = prev_rows * rows * cols
             total_cost += cost
             
-            # Update the result matrix dimensions
-            new_matrix = (temp_matrices[i-1][0], temp_matrices[i][1])
-            temp_matrices[i-1] = new_matrix  # Replace the first matrix with the result
+            # Update result dimensions for next iteration
+            result_cols = cols
         
         return total_cost
+
+    def __del__(self):
+        # Clean up matplotlib figures when the application is closed
+        if hasattr(self, 'fig_dp') and self.fig_dp is not None:
+            plt.close(self.fig_dp)
+        
+        if hasattr(self, 'fig_comparison') and self.fig_comparison is not None:
+            plt.close(self.fig_comparison)
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = MatrixChainMultiplicationApp(root)
+    
+    # Clean up when the window is closed
+    def on_closing():
+        if hasattr(app, 'fig_dp') and app.fig_dp is not None:
+            plt.close(app.fig_dp)
+        if hasattr(app, 'fig_comparison') and app.fig_comparison is not None:
+            plt.close(app.fig_comparison)
+        plt.close('all')  # Close any remaining figures
+        root.destroy()
+    
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
